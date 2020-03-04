@@ -1,3 +1,5 @@
+// Derek Nadeau CS1550 Project 2 Spring 2020 // DRN16@pitt.edu
+
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -33,22 +35,22 @@ int guides_prob_seed 	= 20;	// sg
 struct semlist {
 
 	struct cs1550_sem 	visitor_count_sem;
-	int 				visitor_count; 	// # of waiting visitors
+	int 				visitor_count; 			// # of waiting visitors not yet in museum
 
 	struct cs1550_sem  	guide_count_sem;
-	int 				guide_count; 	// # of waiting guides
+	int 				guide_count; 			// # of waiting guides not yet in museum
 
-	struct cs1550_sem  	guides_in_museum_sem; // initialize to 2
-	int 				guides_in_museum;
+	struct cs1550_sem  	visitors_in_museum_sem; 
+	int 				visitors_in_museum;		// # visitors currently in museum
 
-	struct cs1550_sem  	visitors_in_museum_sem;
-	int 				visitors_in_museum;
+	struct cs1550_sem  	guides_in_museum_sem; 	
+	int 				guides_in_museum;		// # guides currently in museum
 
 	struct cs1550_sem	claim_leaving_visitor_sem;
-	int 				claim_leaving_visitor;
+	int 				claim_leaving_visitor;	// used to keep track of leaving visitors unclaimed by a tour guide
 
 	struct cs1550_sem 	spots_to_claim_sem;
-	int 				spots_to_claim;
+	int 				spots_to_claim;			// used to keep track of how many arriving visitors can currently enter the museum 
 
 } typedef semlist;
 
@@ -64,14 +66,9 @@ int main(int argc, char * argv[]) {
 	start_time = malloc(sizeof(struct timeval));
 	gettimeofday(start_time, NULL);
 
-	// printf("Program start\n"); fflush(stdout);
-
-	// parse all input arguments
+	// parse all input arguments in any order
 	int i;
 	for (i = 1; i < argc; i++) {
-
-		// printf("%s\n", argv[i]);
-		// fflush(stdout);
 
 		if (argv[i][0] == '-') {
 
@@ -106,11 +103,8 @@ int main(int argc, char * argv[]) {
 
 	printf("The museum is now empty.\n");
 	if (fork() == 0)      { spawner(visitor, visitors, visitors_delay, visitors_burst_prob, guides_prob_seed); } 
-	else if (fork() == 0) { spawner(guide,   guides,   guides_delay,   guides_burst_prob,   guides_prob_seed);}
-	else {
-		wait(NULL); wait(NULL);
-		// printf("-------------\n"); fflush(stdout);
-	}
+	else if (fork() == 0) { spawner(guide,   guides,   guides_delay,   guides_burst_prob,   guides_prob_seed); }
+	else 				  { wait(NULL); wait(NULL); }
 
 	return 0;
 
@@ -121,23 +115,23 @@ void initialize_sems() {
 	
 	sems = (semlist*)mmap(NULL, sizeof(semlist), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, 0, 0);
 
-	sems->visitor_count_sem.value 		= 1;
-	sems->visitor_count 				= 0;
+	sems->visitor_count_sem.value 			= 1;
+	sems->visitor_count 					= 0;
 
-	sems->guide_count_sem.value 		= 1;
-	sems->guide_count 					= 0;
+	sems->guide_count_sem.value 			= 1;
+	sems->guide_count 						= 0;
 
-	sems->guides_in_museum_sem.value	= 1;
-	sems->guides_in_museum 				= 0;
+	sems->guides_in_museum_sem.value		= 1;
+	sems->guides_in_museum 					= 0;
 
-	sems->visitors_in_museum_sem.value 	= 1;
-	sems->visitors_in_museum 			= 0;
+	sems->visitors_in_museum_sem.value 		= 1;
+	sems->visitors_in_museum 				= 0;
 
-	sems->claim_leaving_visitor_sem.value = 1;
-	sems->claim_leaving_visitor 		= 0;
+	sems->claim_leaving_visitor_sem.value 	= 1;
+	sems->claim_leaving_visitor 			= 0;
 
-	sems->spots_to_claim_sem.value 		= 1;
-	sems->spots_to_claim 				= 0;
+	sems->spots_to_claim_sem.value 			= 1;
+	sems->spots_to_claim 					= 0;
 
 }
 
@@ -170,7 +164,7 @@ void visitorArrives(int n) {
 
 	sems->visitor_count++;
 	printf("Visitor %d arrives at time %d.\n", n, real_time()); fflush(stdout);
-	
+
 	up(&(sems->visitor_count_sem));
 
 }
@@ -307,7 +301,6 @@ void tourguideLeaves(int n) {
 		if (can_leave) {
 			sems->guides_in_museum--;
 			printf("Tour guide %d leaves the museum at time %d.\n", n, real_time()); fflush(stdout);
-			// if (sems->guides_in_museum == 0) { printf("The museum is now empty.\n"); fflush(stdout); }
 		}
 
 		up(&(sems->claim_leaving_visitor_sem));
